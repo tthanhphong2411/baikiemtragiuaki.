@@ -1,0 +1,372 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Game - Hứng Táo</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            color: #fff;
+            background: linear-gradient(135deg, #10234d, #1765a8);
+            padding: 20px;
+        }
+
+        h1 {
+            color: #ffdf70;
+            margin-bottom: 8px;
+        }
+
+        .info {
+            display: flex;
+            justify-content: center;
+            gap: 25px;
+            flex-wrap: wrap;
+            font-size: 18px;
+            margin: 20px 0;
+        }
+
+        .game-box {
+            width: 100%;
+            max-width: 600px;
+            margin: auto;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            background: linear-gradient(#b9e9ff, #f1fbff);
+            border: 5px solid #fff;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px #0004;
+            touch-action: none;
+        }
+
+        button, .back {
+            display: inline-block;
+            margin: 12px 5px;
+            padding: 12px 22px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            background: #ffdf70;
+            color: #17315a;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        button:hover, .back:hover {
+            background: white;
+        }
+
+        .guide {
+            line-height: 1.8;
+            color: #e2efff;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🍎 MINI GAME: HỨNG TÁO 🍎</h1>
+    <p>Điều khiển giỏ để hứng thật nhiều táo!</p>
+
+    <div class="info">
+        <div>⭐ Điểm: <span id="score">0</span></div>
+        <div>❤️ Mạng: <span id="lives">3</span></div>
+    </div>
+
+    <div class="game-box">
+        <canvas id="game" width="600" height="450"></canvas>
+    </div>
+
+    <div>
+        <button id="startBtn" onclick="startGame()">▶ Bắt đầu / Chơi lại</button>
+        <button onclick="pauseGame()">⏸ Tạm dừng</button>
+    </div>
+
+    <p class="guide">
+        Máy tính: dùng phím ← → hoặc A / D để di chuyển giỏ.<br>
+        Điện thoại: chạm và kéo ngón tay sang trái hoặc phải.<br>
+        Hứng được táo: +1 điểm. Để rơi táo: mất 1 mạng.
+    </p>
+
+    <a class="back" href="index.html">← Quay về trang chủ</a>
+
+    <script>
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d");
+
+        const scoreText = document.getElementById("score");
+        const livesText = document.getElementById("lives");
+        const startBtn = document.getElementById("startBtn");
+
+        const basket = {
+            x: 255,
+            y: 390,
+            w: 90,
+            h: 35,
+            speed: 7
+        };
+
+        let apples = [];
+        let score = 0;
+        let lives = 3;
+        let running = false;
+        let paused = false;
+        let gameOver = false;
+        let animationId = null;
+        let spawnTimer = 0;
+        let leftPressed = false;
+        let rightPressed = false;
+        let lastTime = 0;
+
+        function drawBasket() {
+            // Thân giỏ
+            ctx.fillStyle = "#b96b2c";
+            ctx.beginPath();
+            ctx.moveTo(basket.x, basket.y);
+            ctx.lineTo(basket.x + basket.w, basket.y);
+            ctx.lineTo(basket.x + basket.w - 12, basket.y + basket.h);
+            ctx.lineTo(basket.x + 12, basket.y + basket.h);
+            ctx.closePath();
+            ctx.fill();
+
+            // Miệng giỏ
+            ctx.strokeStyle = "#713b19";
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(basket.x - 3, basket.y);
+            ctx.lineTo(basket.x + basket.w + 3, basket.y);
+            ctx.stroke();
+
+            // Các nan giỏ
+            ctx.strokeStyle = "#f2b66d";
+            ctx.lineWidth = 3;
+            for (let i = 1; i <= 4; i++) {
+                const x = basket.x + i * basket.w / 5;
+                ctx.beginPath();
+                ctx.moveTo(x, basket.y + 5);
+                ctx.lineTo(x - 2, basket.y + basket.h - 3);
+                ctx.stroke();
+            }
+        }
+
+        function drawApple(apple) {
+            ctx.font = "32px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("🍎", apple.x, apple.y);
+        }
+
+        function drawBackground() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Mây
+            ctx.fillStyle = "rgba(255,255,255,0.75)";
+            [[80,65],[280,95],[490,55]].forEach(([x,y]) => {
+                ctx.beginPath();
+                ctx.arc(x, y, 22, 0, Math.PI * 2);
+                ctx.arc(x + 22, y - 8, 27, 0, Math.PI * 2);
+                ctx.arc(x + 45, y, 20, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Mặt đất
+            ctx.fillStyle = "#7cc576";
+            ctx.fillRect(0, 435, canvas.width, 15);
+        }
+
+        function draw() {
+            drawBackground();
+            apples.forEach(drawApple);
+            drawBasket();
+        }
+
+        function update(delta) {
+            const factor = delta / 16.67;
+
+            if (leftPressed) basket.x -= basket.speed * factor;
+            if (rightPressed) basket.x += basket.speed * factor;
+
+            basket.x = Math.max(
+                0,
+                Math.min(canvas.width - basket.w, basket.x)
+            );
+
+            spawnTimer += delta;
+
+            if (spawnTimer >= Math.max(350, 900 - score * 10)) {
+                apples.push({
+                    x: 25 + Math.random() * (canvas.width - 50),
+                    y: -10,
+                    speed: 2.5 + Math.random() * 1.5 + score * 0.025
+                });
+                spawnTimer = 0;
+            }
+
+            for (let i = apples.length - 1; i >= 0; i--) {
+                const apple = apples[i];
+                apple.y += apple.speed * factor;
+
+                // Kiểm tra hứng táo
+                if (
+                    apple.y >= basket.y &&
+                    apple.y <= basket.y + basket.h &&
+                    apple.x >= basket.x - 5 &&
+                    apple.x <= basket.x + basket.w + 5
+                ) {
+                    apples.splice(i, 1);
+                    score++;
+                    scoreText.textContent = score;
+                    continue;
+                }
+
+                // Táo rơi khỏi màn hình
+                if (apple.y > canvas.height) {
+                    apples.splice(i, 1);
+                    lives--;
+                    livesText.textContent = lives;
+
+                    if (lives <= 0) {
+                        endGame();
+                        return;
+                    }
+                }
+            }
+        }
+
+        function loop(timestamp) {
+            if (!running || paused) return;
+
+            const delta = lastTime ? Math.min(timestamp - lastTime, 40) : 16.67;
+            lastTime = timestamp;
+
+            update(delta);
+            draw();
+
+            if (running && !paused) {
+                animationId = requestAnimationFrame(loop);
+            }
+        }
+
+        function startGame() {
+            if (animationId !== null) {
+                cancelAnimationFrame(animationId);
+            }
+
+            score = 0;
+            lives = 3;
+            apples = [];
+            spawnTimer = 0;
+            basket.x = (canvas.width - basket.w) / 2;
+            running = true;
+            paused = false;
+            gameOver = false;
+            lastTime = 0;
+
+            scoreText.textContent = score;
+            livesText.textContent = lives;
+            startBtn.textContent = "🔄 Chơi lại";
+
+            draw();
+            animationId = requestAnimationFrame(loop);
+        }
+
+        function pauseGame() {
+            if (!running || gameOver) return;
+
+            if (!paused) {
+                paused = true;
+                cancelAnimationFrame(animationId);
+                draw();
+                overlayMessage("ĐÃ TẠM DỪNG");
+            } else {
+                paused = false;
+                lastTime = 0;
+                animationId = requestAnimationFrame(loop);
+            }
+        }
+
+        function endGame() {
+            running = false;
+            paused = false;
+            gameOver = true;
+            cancelAnimationFrame(animationId);
+            draw();
+            overlayMessage("GAME OVER! - Điểm: " + score);
+        }
+
+        function overlayMessage(message) {
+            ctx.fillStyle = "rgba(10, 25, 55, 0.78)";
+            ctx.fillRect(40, 160, canvas.width - 80, 110);
+
+            ctx.fillStyle = "#ffdf70";
+            ctx.font = "bold 27px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(message, canvas.width / 2, 220);
+        }
+
+        document.addEventListener("keydown", function(e) {
+            if (["ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+                e.preventDefault();
+            }
+
+            if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") {
+                leftPressed = true;
+            }
+
+            if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") {
+                rightPressed = true;
+            }
+
+            if (e.key === " " && !running) {
+                startGame();
+            }
+        });
+
+        document.addEventListener("keyup", function(e) {
+            if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") {
+                leftPressed = false;
+            }
+
+            if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") {
+                rightPressed = false;
+            }
+        });
+
+        // Điều khiển bằng chuột hoặc cảm ứng
+        function moveBasket(event) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const clientX = event.clientX ??
+                (event.touches && event.touches[0].clientX);
+
+            if (clientX === undefined) return;
+
+            basket.x = (clientX - rect.left) * scaleX - basket.w / 2;
+            basket.x = Math.max(0, Math.min(canvas.width - basket.w, basket.x));
+
+            if (!running || paused) draw();
+        }
+
+        canvas.addEventListener("pointermove", function(event) {
+            if (event.buttons === 1 || event.pointerType === "touch") {
+                moveBasket(event);
+            }
+        });
+
+        // Vẽ màn hình chờ
+        draw();
+        overlayMessage("NHẤN BẮT ĐẦU ĐỂ CHƠI");
+    </script>
+</body>
+</html>
